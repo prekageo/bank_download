@@ -42,8 +42,8 @@ class WebBrowser:
         cur.execute('select * from moz_cookies')
         cookies = []
         for row in cur.fetchall():
-            if row['baseDomain'] in cookie_hosts:
-                cookies.append('%s=%s' % (row[3], row[4]))
+            if row['host'] in cookie_hosts or '.' + row['host'] in cookie_hosts:
+                cookies.append('%s=%s' % (row['name'], row['value']))
         conn.close()
         return cookies
 
