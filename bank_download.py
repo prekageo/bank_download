@@ -1076,7 +1076,7 @@ def main():
     for klass, account_name, account_id in banks:
         bank = klass(conn, account_name, account_id)
         balance = bank.get_balance()
-        print(account_name, balance)
+        print('balance', account_name, balance)
         for parsed_txn in bank.get_transactions():
             txn = parsed_txn.txn
             if parsed_txn.new:
