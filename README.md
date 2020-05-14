@@ -8,7 +8,9 @@ It supports checking and savings accounts from the following banks:
 
 * Ally
 * Bank Of America
+* Capital One
 * Chase
+* Citibank
 * Fidelity
 * First Tech Credit Union
 * Marcus
