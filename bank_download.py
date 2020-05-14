@@ -997,6 +997,72 @@ class CapitalOne(Bank):
 
             yield ParsedTransaction(existing is None, txn)
 
+class Citibank(Bank):
+    def __init__(self, conn, nickname, account_id):
+        self.conn = conn
+        self.nickname = nickname
+        self.account_id = account_id
+        self.walk_time_fmt = '%Y-%m-%d'
+        self.browser = WebBrowser(f'https://online.citi.com/US/ag/accountactivity/{self.account_id}', ['citi.com', '.citi.com', 'online.citi.com', '.online.citi.com'])
+        cookies = dict(c.split('=', 1) for c in self.browser.cookies.split('; '))
+        auth_cookie = dict(c.split('=', 1) for c in cookies['NGACoExistenceCookie'].split('|'))
+        self.browser.headers = {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + auth_cookie['authToken'],
+            'client_id': auth_cookie['clientId'],
+            'bizToken': auth_cookie['bizToken'],
+        }
+
+    def get_balance(self):
+        url = f'https://online.citi.com/gcgapi/prod/public/v1/v1/bank/accounts/{self.account_id}/detailsFromTPS/retrieve'
+        data = self.browser.get(url, b'').read()
+        # open('tmp.html', 'wb').write(data)
+        # data = open('tmp.html', 'rb').read()
+        data = json.loads(data, parse_float=decimal.Decimal)
+        return decimal.Decimal(data['accountDetails']['startOfDayBalance'])
+
+    def walk_pages(self, from_date, to_date):
+        url = f'https://online.citi.com/gcgapi/prod/public/v1/v1/digital/bankLedger/accounts/{self.account_id}/transactions/summaryAndBalances'
+        req_data = {
+            'timePeriodFilter': {
+                'filterIndicator': 'DATE',
+                'startRange': from_date,
+                'endRange': to_date,
+            },
+        }
+        req_data = json.dumps(req_data)
+        data = self.browser.get(url, req_data.encode()).read()
+        # open('tmp2.html', 'wb').write(data)
+        # data = open('tmp2.html', 'rb').read()
+        yield data
+
+    def process_page(self, data):
+        data = json.loads(data, parse_float=decimal.Decimal)
+
+        def _get(activity, columnId, columnValue='actualValue', default=None):
+            for column in activity['transactionColumns']:
+                if column is not None and column['columnId'] == columnId:
+                    return column[columnValue]
+            return default
+
+        for activity in data['accountActivity']['postedTransactions']:
+            txn = Transaction()
+            txn.account_name = self.nickname
+            txn.date = datetime.datetime.strptime(_get(activity, 'DATE', 'displayValue'), '%m/%d/%Y').date()
+            txn.amount = decimal.Decimal(_get(activity, 'CREDIT', default=0))
+            txn.amount -= decimal.Decimal(_get(activity, 'DEBIT', default=0))
+            txn.description = _get(activity, 'DESC') + activity['extendedDescriptions'][0]['displayValue']
+            txn.category = None
+            txn.bank_txn_id = activity['transactionId']
+
+            existing = Transaction.load(self.conn, txn.account_name, txn.bank_txn_id)
+            if existing:
+                assert existing.matches(txn)
+            else:
+                txn.save(self.conn)
+
+            yield ParsedTransaction(existing is None, txn)
+
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
