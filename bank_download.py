@@ -945,6 +945,58 @@ class FirstTechFedWeb(FirstTechFed):
             if len(root.xpath('//div[contains(@class,"is-last-page")]')) > 0:
                 break
 
+class CapitalOne(Bank):
+    def __init__(self, conn, nickname, account_id):
+        self.conn = conn
+        self.nickname = nickname
+        self.account_id = account_id
+        self.walk_time_fmt = '%Y-%m-%d'
+        headers = {
+            'Accept': 'application/json;v=1',
+        }
+        self.browser = WebBrowser('https://myaccounts.capitalone.com/accountSummary', ['capitalone.com', '.capitalone.com', 'myaccounts.capitalone.com', '.myaccounts.capitalone.com'], headers)
+
+    def get_balance(self):
+        url = f'https://myaccounts.capitalone.com/ease-app-web/edge/Bank/accountdetail/getaccountbyid/{self.account_id}?productId=3800&productType=SA'
+        data = self.browser.get(url).read()
+        # open('tmp.html', 'wb').write(data)
+        # data = open('tmp.html', 'rb').read()
+        data = json.loads(data, parse_float=decimal.Decimal)
+        return decimal.Decimal(data['accountDetails']['currentBalance'])
+
+    def walk_pages(self, from_date, to_date):
+        self.browser.headers = {
+            'Accept': 'application/json;v=2',
+        }
+        url = f'https://myaccounts.capitalone.com/ease-app-web/edge/Bank/accounts/{self.account_id}/transactions?&startDate={from_date}&endDate={to_date}'
+        data = self.browser.get(url).read()
+        # open('tmp2.html', 'wb').write(data)
+        # data = open('tmp2.html', 'rb').read()
+        yield data
+
+    def process_page(self, data):
+        data = json.loads(data, parse_float=decimal.Decimal)
+
+        if 'posted' not in data:
+            return
+
+        for activity in data['posted']:
+            txn = Transaction()
+            txn.account_name = self.nickname
+            txn.date = datetime.datetime.strptime(activity['effectiveDate'].split('T')[0], '%Y-%m-%d').date()
+            txn.amount = decimal.Decimal(activity['transactionTotalAmount'])
+            txn.description = activity['statementDescription']
+            txn.category = activity['transactionOverview']['category']
+            txn.bank_txn_id = activity['transactionId']
+
+            existing = Transaction.load(self.conn, txn.account_name, txn.bank_txn_id)
+            if existing:
+                assert existing.matches(txn)
+            else:
+                txn.save(self.conn)
+
+            yield ParsedTransaction(existing is None, txn)
+
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
