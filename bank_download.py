@@ -857,7 +857,7 @@ class FirstTechFedCsv(FirstTechFed):
             'Parameters.MaximumAmount': '',
             'Parameters.MinimumAmount': '',
             'Parameters.TransactionTypeId': '',
-            'format': '8175',
+            'format': '54',
             'Parameters.StartDate': from_date,
             'Parameters.EndDate': to_date,
         }
