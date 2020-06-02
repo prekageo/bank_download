@@ -400,9 +400,11 @@ class WellsFargo(Bank):
                 txn.date = datetime.datetime.strptime(record.xpath('.//td[2]/span')[0].text, '%m/%d/%y').date()
                 txn.description = record.xpath('.//td[3]/span')[0].text
                 amount = record.xpath('.//td[4]/span')
+                mult = 1
                 if len(amount) == 0:
+                    mult = -1
                     amount = record.xpath('.//td[5]/span')
-                txn.amount = parse_amount(amount[0].text)
+                txn.amount = mult * parse_amount(amount[0].text)
                 # TODO: get the ending balance as well in the bank_txn_id
                 txn.bank_txn_id = create_hash(txn.description, txn.date, txn.amount)
 
