@@ -986,7 +986,8 @@ class CapitalOne(Bank):
             txn = Transaction()
             txn.account_name = self.nickname
             txn.date = datetime.datetime.strptime(activity['effectiveDate'].split('T')[0], '%Y-%m-%d').date()
-            txn.amount = decimal.Decimal(activity['transactionTotalAmount'])
+            mult = -1 if activity['debitCardType'] == 'Debit' else 1
+            txn.amount = mult * decimal.Decimal(activity['transactionTotalAmount'])
             txn.description = activity['statementDescription']
             txn.category = activity['transactionOverview']['category']
             txn.bank_txn_id = activity['transactionId']
