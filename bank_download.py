@@ -15,8 +15,11 @@ import re
 import sqlite3
 import time
 import urllib.request
+from collections import namedtuple
 
 FIREFOX_PROFILE_PATH = ''
+
+Account = namedtuple('Account', ['id', 'name'])
 
 def parse_amount(amount):
     return decimal.Decimal(amount.replace(',', '').replace('$', ''))
@@ -1078,6 +1081,13 @@ def main():
 
     accounts = [
     ]
+
+    banks = [
+    ]
+
+    for klass, mapping in banks:
+        for account in klass.get_accounts():
+            accounts.append((klass, mapping[account.name], account.id))
 
     for klass, account_name, account_id in accounts:
         account = klass(conn, account_name, account_id)
