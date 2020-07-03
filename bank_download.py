@@ -725,7 +725,7 @@ class FidelityCredit(Bank):
         data = json.loads(data, parse_float=decimal.Decimal)
 
         return {
-            'category': data['mccDescription'],
+            'category': data.get('mccDescription', ''),
         }
 
 class Fidelity(Bank):
