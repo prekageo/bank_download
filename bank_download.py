@@ -30,9 +30,9 @@ def create_hash(*data):
 class WebBrowser:
     def __init__(self, referer, cookie_hosts, headers=None):
         self.referer = referer
-        self.cookies = self.get_firefox_cookies(cookie_hosts)
-        self.cookies += self.get_firefox_cookies_session(cookie_hosts)
-        self.cookies = '; '.join(self.cookies)
+        self.cookies = {}
+        self.cookies.update(**dict(self.get_firefox_cookies(cookie_hosts)))
+        self.cookies.update(**dict(self.get_firefox_cookies_session(cookie_hosts)))
         self.headers = headers
 
     def get_firefox_cookies(self, cookie_hosts):
@@ -43,7 +43,7 @@ class WebBrowser:
         cookies = []
         for row in cur.fetchall():
             if row['host'] in cookie_hosts or '.' + row['host'] in cookie_hosts:
-                cookies.append('%s=%s' % (row['name'], row['value']))
+                yield row['name'], row['value']
         conn.close()
         return cookies
 
@@ -55,7 +55,7 @@ class WebBrowser:
         cookies = []
         for k in data['cookies']:
             if k['host'] in cookie_hosts:
-                cookies.append('%s=%s' % (k['name'], k['value']))
+                yield k['name'], k['value']
         return cookies
 
     def get(self, url, data=None):
@@ -67,7 +67,11 @@ class WebBrowser:
         r.add_header('Connection', 'keep-alive')
         r.add_header('Referer', self.referer)
         r.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:63.0) Gecko/20100101 Firefox/63.0')
-        r.add_header('Cookie', self.cookies)
+        cookies = []
+        for k, v in self.cookies.items():
+            cookies.append(f'{k}={v}')
+        cookies = '; '.join(cookies)
+        r.add_header('Cookie', cookies)
         if self.headers is not None:
             for k, v in self.headers.items():
                 r.add_header(k, v)
@@ -1007,8 +1011,7 @@ class Citibank(Bank):
         self.account_id = account_id
         self.walk_time_fmt = '%Y-%m-%d'
         self.browser = WebBrowser(f'https://online.citi.com/US/ag/accountactivity/{self.account_id}', ['citi.com', '.citi.com', 'online.citi.com', '.online.citi.com'])
-        cookies = dict(c.split('=', 1) for c in self.browser.cookies.split('; '))
-        auth_cookie = dict(c.split('=', 1) for c in cookies['NGACoExistenceCookie'].split('|'))
+        auth_cookie = dict(c.split('=', 1) for c in self.browser.cookies['NGACoExistenceCookie'].split('|'))
         self.browser.headers = {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + auth_cookie['authToken'],
