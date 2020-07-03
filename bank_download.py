@@ -1013,14 +1013,35 @@ class Citibank(Bank):
         self.nickname = nickname
         self.account_id = account_id
         self.walk_time_fmt = '%Y-%m-%d'
-        self.browser = WebBrowser(f'https://online.citi.com/US/ag/accountactivity/{self.account_id}', ['citi.com', '.citi.com', 'online.citi.com', '.online.citi.com'])
-        auth_cookie = dict(c.split('=', 1) for c in self.browser.cookies['NGACoExistenceCookie'].split('|'))
-        self.browser.headers = {
+        self.browser = self.create_browser(f'https://online.citi.com/US/ag/accountactivity/{self.account_id}')
+
+    @classmethod
+    def create_browser(cls, referer):
+        browser = WebBrowser(referer, ['citi.com', '.citi.com', 'online.citi.com', '.online.citi.com'])
+        auth_cookie = dict(c.split('=', 1) for c in browser.cookies['NGACoExistenceCookie'].split('|'))
+        browser.headers = {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + auth_cookie['authToken'],
             'client_id': auth_cookie['clientId'],
             'bizToken': auth_cookie['bizToken'],
         }
+        return browser
+
+    @classmethod
+    def get_accounts(cls):
+        browser = cls.create_browser('https://online.citi.com/US/ag/mrc/dashboard')
+        url = 'https://online.citi.com/US/REST/nga/ngasessionmanagement.jws'
+        req_data = {
+            'coexistenceNeeded': 'N',
+            'gemfirePushNeeded': 'Y',
+        }
+        req_data = json.dumps(req_data)
+        data = browser.get(url, req_data.encode()).read()
+        # open('tmp0.html', 'wb').write(data)
+        # data = open('tmp0.html', 'rb').read()
+        data = json.loads(data)
+        for account in data['accounts']:
+            yield Account(account['accountInstanceId'], account['completeDescription'])
 
     def get_balance(self):
         url = f'https://online.citi.com/gcgapi/prod/public/v1/v1/bank/accounts/{self.account_id}/detailsFromTPS/retrieve'
