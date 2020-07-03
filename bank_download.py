@@ -1076,14 +1076,14 @@ def main():
     conn.row_factory = sqlite3.Row
     Transaction.create_table(conn)
 
-    banks = [
+    accounts = [
     ]
 
-    for klass, account_name, account_id in banks:
-        bank = klass(conn, account_name, account_id)
-        balance = bank.get_balance()
+    for klass, account_name, account_id in accounts:
+        account = klass(conn, account_name, account_id)
+        balance = account.get_balance()
         print('balance', account_name, balance)
-        for parsed_txn in bank.get_transactions():
+        for parsed_txn in account.get_transactions():
             txn = parsed_txn.txn
             if parsed_txn.new:
                 print(txn.date, txn.amount, txn.description)
