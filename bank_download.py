@@ -1115,8 +1115,8 @@ def main():
         for account in klass.get_accounts():
             accounts.append((klass, mapping[account.name], account.id))
 
-    for klass, account_name, account_id in accounts:
-        account = klass(conn, account_name, account_id)
+    for klass, account_name, *params in accounts:
+        account = klass(conn, account_name, *params)
         balance = account.get_balance()
         print('balance', account_name, balance)
         for parsed_txn in account.get_transactions():
