@@ -80,6 +80,11 @@ class WebBrowser:
                 r.add_header(k, v)
         return urllib.request.urlopen(r, data)
 
+    def update_cookies(self, response):
+        for cookie in response.headers.get_all('Set-Cookie'):
+            k, _, v = cookie.partition(';')[0].partition('=')
+            self.cookies[k] = v
+
 class Transaction:
     @staticmethod
     def load(conn, account_name, bank_txn_id):
