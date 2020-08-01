@@ -451,17 +451,33 @@ class WellsFargo(Bank):
         return response
 
 class Ally(Bank):
-    def __init__(self, conn, nickname, account_id):
+    def __init__(self, conn, nickname, account_id, username, password):
         self.conn = conn
         self.nickname = nickname
         self.account_id = account_id
         self.walk_time_fmt = '%Y-%m-%d'
         self.browser = WebBrowser('https://secure.ally.com/dashboard', ['secure.ally.com', '.secure.ally.com', '.ally.com'])
 
-        csrf = self.browser.get('https://secure.ally.com/capi-gw/v1/times/wait').getheader('CSRFChallengeToken')
+        response = self.browser.get('https://secure.ally.com/capi-gw/session/status/olbWeb', b'')
+        csrf = response.getheader('CSRFChallengeToken')
+        self.browser.update_cookies(response)
+
         self.browser.headers = {
             'CSRFChallengeToken': csrf,
+            'ApplicationId': 'ALLYUSBOLB',
+            'ApplicationName': 'AOB',
+            'ApplicationVersion': '1.0',
         }
+
+        params = {
+            'userNamePvtEncrypt': username,
+            'passwordPvtBlock': password,
+            'rememberMeFlag': 'false',
+            'channelType': 'OLB',
+        }
+        params = urllib.parse.urlencode(params).encode()
+        response = self.browser.get('https://secure.ally.com/capi-gw/customer/authentication', params)
+        self.browser.update_cookies(response)
 
     def get_balance(self):
         url = f'https://secure.ally.com/capi-gw/accounts/{self.account_id}?include=accountAddress'
