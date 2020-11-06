@@ -1070,7 +1070,10 @@ class Citibank(Bank):
         # open('tmp.html', 'wb').write(data)
         # data = open('tmp.html', 'rb').read()
         data = json.loads(data, parse_float=decimal.Decimal)
-        return decimal.Decimal(data['accountDetails']['startOfDayBalance'])
+        balance = data['accountDetails']['startOfDayBalance']
+        if balance is None:
+            return decimal.Decimal(0)
+        return decimal.Decimal(balance)
 
     def walk_pages(self, from_date, to_date):
         url = f'https://online.citi.com/gcgapi/prod/public/v1/v1/digital/bankLedger/accounts/{self.account_id}/transactions/summaryAndBalances'
