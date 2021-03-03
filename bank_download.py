@@ -863,7 +863,7 @@ class FirstTechFed(Bank):
 class FirstTechFedCsv(FirstTechFed):
     def __init__(self, conn, nickname, account_id):
         super().__init__(conn, nickname, account_id)
-        self.walk_time_fmt = '%m/%d/%Y'
+        self.walk_time_fmt = '%Y-%m-%d'
 
     def get_transactions(self):
         url = f'https://banking.firsttechfed.com/MyAccountsV2/Export?accountIdentifier={self.account_id[1]}'
@@ -878,7 +878,7 @@ class FirstTechFedCsv(FirstTechFed):
     def walk_pages(self, from_date, to_date):
         params = {
             '__RequestVerificationToken': self.csrf,
-            'AccountIdentifier': self.account_id[1],
+            'AccountIdentifiers': self.account_id[1],
             'Parameters.TransactionCategoryId': '',
             'Parameters.Debit': '',
             'Parameters.Description': '',
