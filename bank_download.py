@@ -192,36 +192,62 @@ class BankOfAmerica(Bank):
         m = re.search('txn=([0-9a-f]+)', details_link)
         return m.group(1)
 
-class BankOfAmericaDebit(BankOfAmerica):
+class BankOfAmericaDebit(Bank):
     def __init__(self, conn, nickname, account_id):
-        super().__init__(conn, nickname, account_id)
+        self.conn = conn
+        self.nickname = nickname
+        self.account_id = account_id
+        headers = {
+            'content-type': 'application/json',
+        }
+        self.browser = WebBrowser('https://secure.bankofamerica.com/', ['.bankofamerica.com', 'secure.bankofamerica.com'], headers)
+        self.base_url = 'https://secure.bankofamerica.com'
+        self.url = f'{self.base_url}/ogateway/addapi/v1/activity'
+        self.html_data = self.get_activity()
+        self.category_map = {100: 'Business Expenses: Business Miscellaneous', 101: 'Business Expenses: Dues & Subscriptions', 102: 'Business Expenses: Office Maintenance', 103: 'Business Expenses: Office Supplies', 104: 'Business Expenses: Postage & Shipping', 105: 'Business Expenses: Printing', 106: 'Education: Education', 107: 'Finance: Credit Card Payments', 108: 'Finance: Loans', 109: 'Finance: Service Charges/Fees', 110: 'Finance: Taxes', 111: 'Giving: Giving', 112: 'Groceries: Groceries', 113: 'Health: Healthcare/Medical', 114: 'Health: Insurance', 115: 'Home & Utilities: Cable/Satellite Services', 116: 'Home & Utilities: Home Improvement', 117: 'Home & Utilities: Home Maintenance', 118: 'Home & Utilities: Mortgages', 119: 'Home & Utilities: Rent', 120: 'Home & Utilities: Telephone Services', 121: 'Home & Utilities: Utilities', 122: 'Cash, Checks & Misc: ATM/Cash Withdrawals', 123: 'Cash, Checks & Misc: Checks', 124: 'Cash, Checks & Misc: Other Bills', 125: 'Cash, Checks & Misc: Other Expenses', 126: 'Personal & Family Care: Child/Dependent Expenses', 127: 'Personal & Family Care: Personal Care', 128: 'Personal & Family Care: Pets/Pet Care', 129: 'Restaurants & Dining: Restaurants/Dining', 130: 'Savings & Transfers: Savings', 131: 'Savings & Transfers: Securities Trades', 132: 'Savings & Transfers: Transfers', 133: 'Shopping & Entertainment: Clothing/Shoes', 134: 'Shopping & Entertainment: Electronics', 135: 'Shopping & Entertainment: Entertainment', 136: 'Shopping & Entertainment: General Merchandise', 137: 'Shopping & Entertainment: Gifts', 138: 'Shopping & Entertainment: Hobbies', 139: 'Shopping & Entertainment: Online Services', 140: 'Transportation: Automotive Expenses', 141: 'Transportation: Car Payments', 142: 'Transportation: Gasoline/Fuel', 143: 'Transportation: Public Transportation', 144: 'Travel: Travel', 147: 'Income: Consulting', 148: 'Income: Deposits', 149: 'Income: Expense Reimbursement', 150: 'Income: Interest', 151: 'Income: Investment Income', 152: 'Income: Other Income', 153: 'Income: Paychecks/Salary', 154: 'Income: Retirement Income', 155: 'Income: Sales', 156: 'Income: Services', 157: 'Income: Wages Paid', 158: 'Finance: Bank of America Credit Card Payment', 159: 'Health: Fitness or Health club membership', 160: 'Insurance: Insurance', 161: 'Finance: Investment Account Fees/Charges', 999: 'Uncategorized: Uncategorized'}
+        self.category_map[998] = None # Uncategorized: Pending
+
+    def get_activity(self, next_token=None):
+        req_data = {
+            'payload': {
+                'accountToken': self.account_id,
+            },
+            'pagingRules': {
+                'pagingRequestedItemCount': 50,
+            },
+        }
+        if next_token is not None:
+            req_data['pagingRules']['pagingStartingItemToken'] = next_token
+        req_data = json.dumps(req_data)
+        data = self.browser.get(self.url, req_data.encode()).read()
+        # open('tmp.html', 'wb').write(data)
+        # data = open('tmp.html', 'rb').read()
+        return json.loads(data, parse_float=decimal.Decimal)
 
     def get_balance(self):
-        return self._get_balance('Available balance')
+        return self.html_data['payload']['depositActivity']['summary']['account']['availableBalance']['amount']
 
     def get_transactions(self):
-        yield from self._get_transactions('//a[@name="prev_trans_nav_bottom"]')
+        while True:
+            yield from self.process_page(self.html_data)
+            next_token = self.html_data['pagingRules'].get('pagingNextPageItemToken', None)
+            if next_token is None:
+                break
+            self.html_data = self.get_activity(next_token)
 
     def process_page(self, html_data):
-        root = lxml.html.fromstring(html_data)
-        for record in root.xpath('//tr[contains(@class,"record")]'):
-            details_link = record.xpath('.//a[1]')[0].attrib['rel']
-
-            if 'txn' not in details_link:
-                continue
-
+        for record in html_data['payload']['depositActivity']['transactionList']['transactions']:
             txn = Transaction()
             txn.account_name = self.nickname
-            txn.bank_txn_id = self.txn_id_from_link(details_link)
-            txn.date = datetime.datetime.strptime(record.xpath('.//td[1]/span')[0].text, '%m/%d/%Y').date()
-            txn.amount = parse_amount(record.xpath('.//td[5]')[0].text)
+            txn.date = datetime.datetime.fromtimestamp(record['postedTimestamp'] / 1000).date()
+            txn.amount = decimal.Decimal(record['amount']['amount'])
+            txn.bank_txn_id = create_hash(record['preferredDescription'], txn.date, txn.amount)
 
             existing = Transaction.load(self.conn, txn.account_name, txn.bank_txn_id)
             if existing:
                 assert existing.matches(txn)
             else:
-                details = self.download_transaction(details_link)
-                assert txn.bank_txn_id == details['bank_txn_id']
+                details = self.download_transaction(record['transactionToken'])
                 assert txn.date == details['date']
                 assert txn.amount == details['amount']
                 txn.description = details['description']
@@ -230,29 +256,31 @@ class BankOfAmericaDebit(BankOfAmerica):
 
             yield ParsedTransaction(existing is None, txn)
 
-    def download_transaction(self, details_link):
-        data = self.browser.get(self.base_url + details_link).read()
+    def download_transaction(self, txn_token):
+        req_data = {
+            'payload': {
+                'transactionToken': txn_token,
+                'accountToken': self.account_id,
+            },
+        }
+        req_data = json.dumps(req_data)
+        data = self.browser.get(f'{self.base_url}/ogateway/addapi/v1/transaction/detail/content', req_data.encode()).read()
         # open('tmp2.html', 'wb').write(data)
         # data = open('tmp2.html', 'rb').read()
-        data = data.decode('ascii')
-        data = json.loads(data)
-        data = data['dynamicTransactionDetail']
+        data = json.loads(data, parse_float=decimal.Decimal)
+        data = data['payload']['transaction']
 
-        if data['claimsTransDate'] is not None:
-            assert data['claimsPostedDate'] == data['claimsTransDate']
-        assert data['claimsPostedDate'] == data['postedDate'].replace('/', '')
-        assert parse_amount(data['claimsTransAmt']) == abs(parse_amount(data['transactionAmount']))
-        if data['longDescription'] != data['description']:
+        assert data['amount']['displayAmount'] == data['postedAmount']['displayAmount']
+        if data['longDescription'] != data['shortDescription']:
             logging.debug('long description differs')
-            logging.debug('%s', data['description'])
+            logging.debug('%s', data['shortDescription'])
             logging.debug('%s', data['longDescription'])
 
         return {
-            'date': datetime.datetime.strptime(data['postedDate'], '%m/%d/%Y').date(),
-            'amount': parse_amount(data['transactionAmount']),
-            'description': data['description'],
-            'category': self.category_map[int(data['transactionCategoryCode'])],
-            'bank_txn_id': data['transactionId'],
+            'date': datetime.datetime.utcfromtimestamp(data['postedTimestamp'] / 1000).date(),
+            'amount': decimal.Decimal(data['postedAmount']['amount']),
+            'description': data['longDescription'],
+            'category': self.category_map[int(data['category']['code'])],
         }
 
 class BankOfAmericaCredit(BankOfAmerica):
