@@ -479,33 +479,53 @@ class WellsFargo(Bank):
         return response
 
 class Ally(Bank):
-    def __init__(self, conn, nickname, account_id, username, password):
+    '''
+    // ==UserScript==
+    // @name         New Userscript
+    // @namespace    http://tampermonkey.net/
+    // @version      0.1
+    // @description  try to take over the world!
+    // @author       You
+    // @match        https://secure.ally.com/*
+    // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
+    // @grant        GM_setClipboard
+    // ==/UserScript==
+
+    (function() {
+        'use strict';
+
+        GM_setClipboard('not ready\n');
+        (function(open) {
+            XMLHttpRequest.prototype.open = function() {
+                this.addEventListener("load", function() {
+                    try {
+                        var y = JSON.parse(atob(JSON.parse(this.responseText).data.data.json_data.token.split('.')[1]))['CIAM-App-Token'];
+                        GM_setClipboard(`${y.CSRFChallengeToken},${y.AwsAccessToken}\n`);
+                    } catch {
+                    }
+                }, false);
+                open.apply(this, arguments);
+            };
+        })(XMLHttpRequest.prototype.open);
+    })();
+    '''
+
+    def __init__(self, conn, nickname, account_id):
         self.conn = conn
         self.nickname = nickname
         self.account_id = account_id
         self.walk_time_fmt = '%Y-%m-%d'
         self.browser = WebBrowser('https://secure.ally.com/dashboard', ['secure.ally.com', '.secure.ally.com', '.ally.com'])
 
-        response = self.browser.get('https://secure.ally.com/capi-gw/session/status/olbWeb', b'')
-        csrf = response.getheader('CSRFChallengeToken')
-        self.browser.update_cookies(response)
-
+        while True:
+            tokens = input('enter tokens: ')
+            if tokens != 'not ready':
+                break
+        csrf, token = tokens.strip().split(',')
         self.browser.headers = {
             'CSRFChallengeToken': csrf,
-            'ApplicationId': 'ALLYUSBOLB',
-            'ApplicationName': 'AOB',
-            'ApplicationVersion': '1.0',
+            'Authorization': 'Bearer ' + token,
         }
-
-        params = {
-            'userNamePvtEncrypt': username,
-            'passwordPvtBlock': password,
-            'rememberMeFlag': 'false',
-            'channelType': 'OLB',
-        }
-        params = urllib.parse.urlencode(params).encode()
-        response = self.browser.get('https://secure.ally.com/capi-gw/customer/authentication', params)
-        self.browser.update_cookies(response)
 
     def get_balance(self):
         url = f'https://secure.ally.com/capi-gw/accounts/{self.account_id}?include=accountAddress'
